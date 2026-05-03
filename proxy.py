@@ -31,13 +31,15 @@ INJECTION_MODE = (os.environ.get("INJECTION_MODE") or "openai-metadata").strip()
 CONFIG_MOUNT = os.environ.get("CONFIG_MOUNT", "/etc/agent/metadata")
 
 _CONTEXT_KEYS = (
-    # NOTIFY_ID is the only experiment identifier the sidecar needs — it
-    # becomes trace_id so all LLM calls for this run land in one Langfuse
-    # trace. EXPERIMENT_ID, EXPERIMENT_RUN_ID, WORKFLOW_NAME are deliberately
-    # excluded: injecting them into LLM metadata would correlate the observer
-    # to the experiment in the observability store, breaking blind-observer
-    # integrity. Experiment-correlation is handled server-side (GraphQL layer).
+    # NOTIFY_ID = ChaosCenter's experiment_run_id (used as Langfuse trace_id)
+    # WORKFLOW_NAME = human-readable experiment name (for display/search)
+    # WORKFLOW_UID = K8s-generated UUID for unique identification
+    # EXPERIMENT_ID, EXPERIMENT_RUN_ID are deliberately excluded: injecting
+    # them would correlate the observer to the experiment, breaking blind
+    # observer integrity. Experiment-correlation is handled server-side.
     "NOTIFY_ID",
+    "WORKFLOW_NAME",
+    "WORKFLOW_UID",
     "AGENT_NAME",
     "AGENT_ROLE",
     "AGENT_ID",
@@ -234,10 +236,15 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
             # notify_id is emitted as a top-level key so it is directly visible
             # on the Langfuse observation (not buried under requester_metadata).
-            # Experiment-correlation identifiers (experiment_id, experiment_run_id,
-            # workflow_name) are NOT injected here — they are linked server-side.
+            # This is ChaosCenter's experiment_run_id - same as trace_id.
             if context.get("notify_id"):
                 metadata["notify_id"] = context["notify_id"]
+            # workflow_name is the human-readable experiment name for searching
+            if context.get("workflow_name"):
+                metadata["workflow_name"] = context["workflow_name"]
+            # workflow_uid provides unique K8s identifier
+            if context.get("workflow_uid"):
+                metadata["workflow_uid"] = context["workflow_uid"]
 
             # Agent identity for filtering/comparison across different agents.
             # Use explicit keys (not just context spread) so naming is always

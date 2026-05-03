@@ -222,8 +222,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 context.get("notify_id")          # ConfigMap-fresh, highest priority
                 or metadata.get("trace_id")        # agent-provided fallback (may be stale)
             )
-            # Normalize: strip dashes to match ChaosCenter's UUID format
-            canonical_trace_id = raw_trace_id.replace("-", "") if raw_trace_id else None
+            # Use notify_id as-is (keep dashes) to match ChaosCenter's UUID format
+            canonical_trace_id = raw_trace_id if raw_trace_id else None
             if canonical_trace_id:
                 metadata["trace_id"] = canonical_trace_id
                 _remember_trace_id(canonical_trace_id, context)

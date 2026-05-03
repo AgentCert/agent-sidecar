@@ -227,6 +227,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
             if canonical_trace_id:
                 metadata["trace_id"] = canonical_trace_id
                 _remember_trace_id(canonical_trace_id, context)
+                # Set trace_name to workflow_name for human-readable display in Langfuse
+                if context.get("workflow_name"):
+                    metadata["trace_name"] = context["workflow_name"]
             else:
                 print(
                     "[agent-sidecar] missing trace_id for LLM request "

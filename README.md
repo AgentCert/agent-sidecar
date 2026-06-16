@@ -12,7 +12,7 @@ forwards the request to the upstream LiteLLM proxy. **The agent code stays obliv
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python)
 ![No-Deps](https://img.shields.io/badge/Dependencies-stdlib%20only-success?style=flat-square)
-![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)
+![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey?style=flat-square)
 
 </div>
 
@@ -211,4 +211,4 @@ than disabling the sidecar — the metadata is the whole point.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).

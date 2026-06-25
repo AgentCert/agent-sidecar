@@ -5,6 +5,7 @@ RUN groupadd -g 1000 sidecar && useradd -u 1000 -g sidecar -m sidecar
 
 WORKDIR /app
 COPY proxy.py .
+RUN chown sidecar:sidecar /app/proxy.py
 
 USER sidecar
 EXPOSE 4001

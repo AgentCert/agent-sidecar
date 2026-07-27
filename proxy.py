@@ -3,9 +3,16 @@ agent-sidecar - Transparent metadata-injection HTTP proxy.
 ==========================================================
 
 Sits between any LLM agent and LiteLLM to enrich requests with
-agent identity. The agent has ZERO awareness of experiment IDs.
+agent identity and experiment correlation.  Agents have zero awareness
+of Langfuse trace IDs or experiment run IDs — the sidecar handles all
+of that from the ConfigMap/metadata-dir files written by the harness.
 Context is loaded dynamically on every request from the ConfigMap
 volume mount so long-running pods use fresh experiment IDs.
+
+Injected Langfuse fields (via OpenAI extra_body metadata):
+    trace_id          – NOTIFY_ID (groups all LLM calls into one Langfuse trace)
+    experiment_run_id – NOTIFY_ID alias (certifier _list_traces() search key)
+    agent_id / agent_name / agent_role – from harness METADATA_DIR files
 
 Env vars (startup config):
     SIDECAR_PORT   - listen port (default 4001)
@@ -31,13 +38,14 @@ INJECTION_MODE = (os.environ.get("INJECTION_MODE") or "openai-metadata").strip()
 CONFIG_MOUNT = os.environ.get("CONFIG_MOUNT", "/etc/agent/metadata")
 
 _CONTEXT_KEYS = (
-    # NOTIFY_ID = ChaosCenter's experiment_run_id (used as Langfuse trace_id)
+    # NOTIFY_ID = ChaosCenter's experiment_run_id (used as Langfuse trace_id
+    #   AND aliased to experiment_run_id so certifier _list_traces() can find it)
     # WORKFLOW_NAME = human-readable experiment name (for display/search)
     # WORKFLOW_UID = K8s-generated UUID for unique identification
-    # EXPERIMENT_ID, EXPERIMENT_RUN_ID are deliberately excluded: injecting
-    # them would correlate the observer to the experiment, breaking blind
-    # observer integrity. Experiment-correlation is handled server-side.
+    # SESSION_ID = stable ID for the entire benchmarking session; all per-run
+    #   traces share this value so Langfuse groups them under one session
     "NOTIFY_ID",
+    "SESSION_ID",
     "WORKFLOW_NAME",
     "WORKFLOW_UID",
     "AGENT_NAME",
@@ -237,22 +245,32 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 )
 
             # Named generation label – distinguishes routing and analysis calls.
+            # Always set generation_name so LiteLLM never falls back to its
+            # internal default ("litellm-acompletion"), which makes all traces
+            # look identical and indistinguishable from polling probes.
             if "generation_name" not in metadata:
-                gen_name = _detect_generation_name(data.get("messages", []))
-                if gen_name:
-                    metadata["generation_name"] = gen_name
+                metadata["generation_name"] = (
+                    _detect_generation_name(data.get("messages", [])) or "llm-call"
+                )
 
-            # notify_id is emitted as a top-level key so it is directly visible
-            # on the Langfuse observation (not buried under requester_metadata).
-            # This is ChaosCenter's experiment_run_id - same as trace_id.
+            # notify_id / experiment_run_id: ChaosCenter's run identifier, same
+            # value as trace_id.  Emitted under BOTH keys so the certifier's
+            # _list_traces() search (which uses experiment_run_id) and any
+            # direct trace_id lookup both resolve to the same Langfuse trace.
+            # Injected here for every agent — no agent source modification needed.
             if context.get("notify_id"):
                 metadata["notify_id"] = context["notify_id"]
+                metadata["experiment_run_id"] = context["notify_id"]
             # workflow_name is the human-readable experiment name for searching
             if context.get("workflow_name"):
                 metadata["workflow_name"] = context["workflow_name"]
             # workflow_uid provides unique K8s identifier
             if context.get("workflow_uid"):
                 metadata["workflow_uid"] = context["workflow_uid"]
+            # session_id groups all traces from one benchmarking session together
+            # in Langfuse so all N fault×run traces appear under one session
+            if context.get("session_id"):
+                metadata["session_id"] = context["session_id"]
 
             # Agent identity for filtering/comparison across different agents.
             # Use explicit keys (not just context spread) so naming is always

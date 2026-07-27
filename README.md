@@ -76,7 +76,7 @@ ConfigMap key ↔ Langfuse field mapping:
 
 | ConfigMap key | Langfuse field | Notes |
 |---|---|---|
-| `NOTIFY_ID` | `trace_id` | Highest priority — comes from ChaosCenter's `experiment_run_id` |
+| `NOTIFY_ID` | `trace_id` + `experiment_run_id` | Same value emitted under both keys — `trace_id` for Langfuse trace grouping, `experiment_run_id` for certifier `_list_traces()` lookup |
 | `WORKFLOW_NAME` | `trace_name` | Argo workflow display name |
 | `WORKFLOW_UID` | `session_id` | Per-workflow grouping |
 | `AGENT_ID` | `user_id` + body `metadata.agent_id` | Registry UUID |

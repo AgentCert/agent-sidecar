@@ -52,6 +52,13 @@ _CONTEXT_KEYS = (
     "AGENT_ROLE",
     "AGENT_ID",
     "AGENT_VERSION",
+    # CURRENT_FAULT_NAME = the fault currently injected, written by the
+    #   Argo workflow's fault-injection step (kubectl patch on this same
+    #   ConfigMap) and cleared on revert. Empty between faults / on traces
+    #   from workflows that don't bracket faults this way yet. Lets the
+    #   certifier's Phase 0 bucketing split a multi-fault trace on ground
+    #   truth instead of guessing from `fault: *` span presence.
+    "CURRENT_FAULT_NAME",
 )
 
 # Headers to strip (hop-by-hop)
@@ -73,13 +80,25 @@ def _load_context() -> dict:
     ctx = {}
     for key in _CONTEXT_KEYS:
         val = ""
+        file_existed = True
         file_path = os.path.join(CONFIG_MOUNT, key)
         try:
             with open(file_path) as fh:
                 val = fh.read().strip()
         except (FileNotFoundError, IOError):
             val = ""
+            file_existed = False
         if not val:
+            # CURRENT_FAULT_NAME is special: an existing-but-empty file means
+            # the fault-injection step explicitly cleared it (no fault active
+            # right now) — a real transition signal the certifier's bucketing
+            # depends on, distinct from the key never having existed at all
+            # (an older workflow that doesn't bracket faults this way yet).
+            # Keep that "" instead of falling through to the env-var fallback
+            # below, which would just silently drop the signal.
+            if key == "CURRENT_FAULT_NAME" and file_existed:
+                ctx[key.lower()] = ""
+                continue
             # Fall back to env var when the file is missing OR empty.
             # AGENT_ID in particular starts empty in the ConfigMap and is
             # only populated after helmUpgradeWithAgentID runs, so the env
@@ -287,6 +306,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
             # preserve it if already set by the agent.
             if context.get("agent_platform"):
                 metadata.setdefault("agent_platform", context["agent_platform"])
+
+            # Ground-truth fault window this call fell in, if the workflow
+            # brackets faults with ConfigMap writes (see CURRENT_FAULT_NAME
+            # above). Set on EVERY call once the ConfigMap carries the key
+            # at all — including "" between faults — because the certifier
+            # needs to tell "no fault active right now" (a real transition
+            # signal) apart from "this event was never sidecar-tagged"
+            # (the key absent entirely, e.g. an older workflow). Only the
+            # latter falls back to the span-based heuristic.
+            if "current_fault_name" in context:
+                metadata["current_fault_name"] = context["current_fault_name"]
 
             return json.dumps(data).encode("utf-8")
         except (json.JSONDecodeError, ValueError):

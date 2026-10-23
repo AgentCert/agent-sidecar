@@ -109,19 +109,18 @@ The image is published as `agentcert/agent-sidecar:latest` from the project's
 ```bash
 make build                      # → agentcert/agent-sidecar:latest
 make build-no-cache             # full rebuild
-make push                       # to registry
+make push                       # push IMAGE_TAG (default latest) to the resolved registry
 make build-push                 # build + push
 make tag NEW_TAG=v1.0.0
-make kind-load                  # docker save → kind load
+make kind-load KIND_CLUSTER_NAME=<cluster>   # kind load docker-image into that cluster
 make clean                      # remove local image
 make run                        # docker run -p 4001:4001 -e UPSTREAM_URL=... :latest
 ```
 
-CI flow ([`build-agent-sidecar.sh`](build-agent-sidecar.sh)) reads `../.env`, builds a
-`ci-YYYYMMDDHHMMSS` tag plus `latest` + `dev`, falls back to the legacy builder if
-BuildKit fails, loads the result into Minikube, prunes stale tags from the cluster's
-containerd, and writes `AGENT_SIDECAR_IMAGE=agentcert/agent-sidecar:latest` back into
-`.env`.
+[`build-agent-sidecar.sh`](build-agent-sidecar.sh) builds only this image through the
+monorepo's `scripts/build-and-push.sh`: locally by default, `--push` publishes it,
+`--kind-load` loads it into KinD. Release tags come from
+`scripts/build-and-push.sh --push --tag RELEASE-N`, not from `make push`.
 
 ---
 
@@ -189,9 +188,9 @@ To make the agent traffic flow through the sidecar without code changes, either:
 
 ## Security considerations
 
-The sidecar is documented under
-[`AgentCert/docs/Flash-agent-data-leakage-analysis.md`](../AgentCert/docs/Flash-agent-data-leakage-analysis.md)
-as the source of risk **RC-4**: it stamps experiment identity onto every outgoing LLM
+The sidecar was documented in the flash-agent data-leakage analysis
+(`AgentCert/docs/Flash-agent-data-leakage-analysis.md`, since removed from AgentCert in
+commit `9e5479f`) as the source of risk **RC-4**: it stamps experiment identity onto every outgoing LLM
 call, which lets a Langfuse-aware agent in theory correlate itself to the experiment
 context. The documented mitigation is server-side blind-observer integrity checks rather
 than disabling the sidecar — the metadata is the whole point.
